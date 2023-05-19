@@ -176,10 +176,11 @@ pub fn with<T: ?Sized, R, F: FnOnce(&mut T) -> R>(
 }
 
 #[doc(hidden)]
-pub fn with_or<T: ?Sized, R, F: FnOnce(&mut T) -> R, I: FnOnce() -> T>(
+pub fn with_or<T: Sized, R, F: FnOnce(&mut T) -> R, I: FnOnce() -> T>(
 	global: &'static Global<T>,
 	mutator: F,
 	init: I,
+	global_for: &mut Option<T>,
 ) -> R {
 	global.with(|r| {
 		// We always use the `last` element when we want to access the
@@ -189,16 +190,16 @@ pub fn with_or<T: ?Sized, R, F: FnOnce(&mut T) -> R, I: FnOnce() -> T>(
 			Some(ptr) => unsafe {
 				// safe because it's only non-zero when it's being called from using, which
 				// is holding on to the underlying reference (and not using it itself) safely.
-				Some(mutator(&mut **ptr.borrow_mut()))
+				mutator(&mut **ptr.borrow_mut())
 			}
 			None => {
 				let mut t = init();
 				let result = mutator(&mut t);
+				*global_for = Some(t);
 				r.borrow_mut().push(
-					Rc::new(RefCell::new(protected as _)),
+					Rc::new(RefCell::new(global_for.as_mut().unwrap() as _)),
 				);
-
-
+				result
 			},
 		}
 	})
@@ -301,13 +302,20 @@ macro_rules! environmental {
 			) -> R {
 				$crate::using_once(&GLOBAL, protected, f)
 			}
+		}
+	};
+	(@INIT $name:ident : $t:ty) => {
+		$crate::thread_local_impl! {
+			static GLOBAL_FIRST: Option<$t> = None
+		}
 
+		impl $name {
 			#[allow(dead_code)]
 			pub fn with_or<R, F: FnOnce(&mut $t) -> R, I: FnOnce() -> $t>(
 				f: F,
 				i: I,
 			) -> R {
-				$crate::with_or(&GLOBAL, |x| f(x), i)
+				$crate::with_or(&GLOBAL, |x| f(x), i, &mut GLOBAL_FIRST)
 			}
 		}
 	};
@@ -400,6 +408,10 @@ macro_rules! environmental {
 		$crate::environmental! { $name : trait @$t [$($args,)*] }
 	};
 	($name:ident : trait $t:ident) => { $crate::environmental! { $name : trait @$t [] } };
+	($name:ident : $t:ident, with_init) => {
+		$crate::environmental! { $name : $t }
+		$crate::environmental! {@INIT $name : $t }
+	};
 }
 
 #[cfg(test)]
