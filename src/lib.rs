@@ -193,11 +193,9 @@ pub fn with_or<T: Sized, R, F: FnOnce(&mut T) -> R, I: FnOnce() -> T>(
 				mutator(&mut **ptr.borrow_mut())
 			}
 			None => {
-				let mut t = init();
-				let result = mutator(&mut t);
 				global_for.with(|g| {
 					if g.borrow().is_none() {
-						*g.borrow_mut() = Some(t);
+						*g.borrow_mut() = Some(init());
 					}
 				});
 				global_for.with(|g| {
@@ -205,7 +203,12 @@ pub fn with_or<T: Sized, R, F: FnOnce(&mut T) -> R, I: FnOnce() -> T>(
 						Rc::new(RefCell::new(g.borrow_mut().as_mut().unwrap() as _)),
 					);
 				});
-				result
+				let ptr = r.borrow().last().cloned();
+				unsafe {
+					// safe because it's only non-zero when it's being called from using, which
+					// is holding on to the underlying reference (and not using it itself) safely.
+					mutator(&mut **ptr.unwrap().borrow_mut())
+				}
 			},
 		}
 	})
