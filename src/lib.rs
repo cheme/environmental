@@ -175,6 +175,36 @@ pub fn with<T: ?Sized, R, F: FnOnce(&mut T) -> R>(
 	})
 }
 
+#[doc(hidden)]
+pub fn with_or<T: ?Sized, R, F: FnOnce(&mut T) -> R, I: FnOnce() -> T>(
+	global: &'static Global<T>,
+	mutator: F,
+	init: I,
+) -> R {
+	global.with(|r| {
+		// We always use the `last` element when we want to access the
+		// currently set global.
+		let last = r.borrow().last().cloned();
+		match last {
+			Some(ptr) => unsafe {
+				// safe because it's only non-zero when it's being called from using, which
+				// is holding on to the underlying reference (and not using it itself) safely.
+				Some(mutator(&mut **ptr.borrow_mut()))
+			}
+			None => {
+				let mut t = init();
+				let result = mutator(&mut t);
+				r.borrow_mut().push(
+					Rc::new(RefCell::new(protected as _)),
+				);
+
+
+			},
+		}
+	})
+
+}
+	
 /// Declare a new global reference module whose underlying value does not contain references.
 ///
 /// Will create a module of a given name that contains two functions:
@@ -270,6 +300,14 @@ macro_rules! environmental {
 				f: F,
 			) -> R {
 				$crate::using_once(&GLOBAL, protected, f)
+			}
+
+			#[allow(dead_code)]
+			pub fn with_or<R, F: FnOnce(&mut $t) -> R, I: FnOnce() -> $t>(
+				f: F,
+				i: I,
+			) -> R {
+				$crate::with_or(&GLOBAL, |x| f(x), i)
 			}
 		}
 	};
