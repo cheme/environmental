@@ -312,7 +312,7 @@ macro_rules! environmental {
 	};
 	(@INIT $name:ident : $t:ty) => {
 		$crate::thread_local_impl! {
-			static GLOBAL_FIRST: RefCell<Option<$t>> = RefCell::new(None)
+			static GLOBAL_FIRST: $crate::RefCell<Option<$t>> = $crate::RefCell::new(None)
 		}
 
 		impl $name {
