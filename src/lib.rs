@@ -180,9 +180,9 @@ pub fn with_or<T: Sized, R, F: FnOnce(&mut T) -> R, I: FnOnce() -> T>(
 	global: &'static Global<T>,
 	mutator: F,
 	init: I,
-	global_for: &mut Option<T>,
+	global_for: &'static mut LocalKey<RefCell<Option<T>>>,
 ) -> R {
-	global.with(|r| {
+	global.with(move |r| {
 		// We always use the `last` element when we want to access the
 		// currently set global.
 		let last = r.borrow().last().cloned();
@@ -195,10 +195,16 @@ pub fn with_or<T: Sized, R, F: FnOnce(&mut T) -> R, I: FnOnce() -> T>(
 			None => {
 				let mut t = init();
 				let result = mutator(&mut t);
-				*global_for = Some(t);
-				r.borrow_mut().push(
-					Rc::new(RefCell::new(global_for.as_mut().unwrap() as _)),
-				);
+				global_for.with(|g| {
+					if g.borrow().is_none() {
+						*g.borrow_mut() = Some(t);
+					}
+				});
+				global_for.with(|g| {
+					r.borrow_mut().push(
+						Rc::new(RefCell::new(g.borrow_mut().as_mut().unwrap() as _)),
+					);
+				});
 				result
 			},
 		}
@@ -306,7 +312,7 @@ macro_rules! environmental {
 	};
 	(@INIT $name:ident : $t:ty) => {
 		$crate::thread_local_impl! {
-			static GLOBAL_FIRST: Option<$t> = None
+			static GLOBAL_FIRST: RefCell<Option<$t>> = RefCell::new(None)
 		}
 
 		impl $name {
