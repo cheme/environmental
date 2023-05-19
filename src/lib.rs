@@ -180,7 +180,7 @@ pub fn with_or<T: Sized, R, F: FnOnce(&mut T) -> R, I: FnOnce() -> T>(
 	global: &'static Global<T>,
 	mutator: F,
 	init: I,
-	global_for: &'static mut LocalKey<RefCell<Option<T>>>,
+	global_for: &'static LocalKey<RefCell<Option<T>>>,
 ) -> R {
 	global.with(move |r| {
 		// We always use the `last` element when we want to access the
@@ -324,7 +324,7 @@ macro_rules! environmental {
 				f: F,
 				i: I,
 			) -> R {
-				$crate::with_or(&GLOBAL, |x| f(x), i, &mut GLOBAL_FIRST)
+				$crate::with_or(&GLOBAL, |x| f(x), i, &GLOBAL_FIRST)
 			}
 		}
 	};
@@ -617,5 +617,28 @@ mod tests {
 		});
 
 		assert!(called_inner);
+	}
+
+	#[test]
+	fn with_or_is_working() {
+		#[derive(Default, Clone, Debug, Eq, PartialEq)]
+		struct Something {
+			pub a: u32,
+			pub b: u16,
+		}
+		impl Drop for Something {
+			fn drop(&mut self) {
+				self.a = 5;
+				self.b = 5;
+			}
+		}
+
+		environmental!(value: Something, with_init);
+
+		assert_eq!(Something::default(), value::with_or(|v| v.clone(), Default::default));
+
+		value::with_or(|v| v.a = 10, Default::default);
+
+		assert_eq!(Something{ a: 10, b: 0}, value::with_or(|v| v.clone(), Default::default));
 	}
 }
